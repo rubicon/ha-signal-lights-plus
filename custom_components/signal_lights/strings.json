@@ -47,7 +47,13 @@
           "name": "Signal name",
           "color": "Color",
           "trigger_type": "Trigger type",
-          "trigger_mode": "Trigger mode"
+          "trigger_mode": "Trigger mode",
+          "effect": "Effect (optional)",
+          "brightness": "Brightness (optional)"
+        },
+        "data_description": {
+          "effect": "A light effect such as blink or pulse. It is only sent to lights that list this effect; other lights still get the color.",
+          "brightness": "1 to 255. Used while this signal wins instead of the light's registered brightness. Leave empty to keep each light's brightness."
         }
       },
       "trigger_entity_equals": {

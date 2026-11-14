@@ -254,6 +254,11 @@ class SignalLightsOptionsFlow(OptionsFlow):
                 "trigger_type": user_input["trigger_type"],
                 "trigger_mode": user_input["trigger_mode"],
             }
+            effect = str(user_input.get("effect") or "").strip()
+            if effect:
+                self._signal_data["effect"] = effect
+            if user_input.get("brightness") is not None:
+                self._signal_data["brightness"] = int(user_input["brightness"])
             trigger_mode = user_input["trigger_mode"]
             if trigger_mode == "entity_equals":
                 return await self.async_step_trigger_entity_equals()
@@ -288,6 +293,12 @@ class SignalLightsOptionsFlow(OptionsFlow):
                                 selector.SelectOptionDict(value="template", label="Template (advanced)"),
                             ],
                             mode=selector.SelectSelectorMode.DROPDOWN,
+                        )
+                    ),
+                    vol.Optional("effect"): selector.TextSelector(),
+                    vol.Optional("brightness"): selector.NumberSelector(
+                        selector.NumberSelectorConfig(
+                            min=1, max=255, step=1, mode=selector.NumberSelectorMode.BOX
                         )
                     ),
                 }
@@ -506,6 +517,10 @@ class SignalLightsOptionsFlow(OptionsFlow):
                 "duration": int(user_input.get("duration", 0)),
                 "light_filter": user_input.get("light_filter", []),
             }
+            if "effect" in self._signal_data:
+                signal_def["effect"] = self._signal_data["effect"]
+            if "brightness" in self._signal_data:
+                signal_def["brightness"] = self._signal_data["brightness"]
             await store.add_signal(signal_def)
             await self._reload_coordinator()
         self._signal_data = {}
