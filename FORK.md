@@ -43,7 +43,7 @@ One row per upstream-owned file this fork changes on purpose.
 
 | File | What differs | Why | Tracking issue |
 |---|---|---|---|
-| (none yet) | | | |
+| `package.json` | `vitest` requirement raised from `^3.0.0` to `^4.1.11` | Fixes [GHSA-82fw-gwwq-j7x9](https://github.com/advisories/GHSA-82fw-gwwq-j7x9) in the test runner; Dependabot cannot open the fix without a lockfile. Remove this row when upstream takes the change | https://github.com/rubicon/ha-signal-lights-plus/issues/3 |
 
 ## Release mechanism
 
@@ -66,6 +66,7 @@ These will add rows to the divergence table when decided:
 - **Release tag scheme.** Upstream's Release workflow accepts only `X.Y.Z` or PEP 440 pre-release
   versions. The fork needs a version that HACS sorts above the matching upstream release. The
   candidates are tested with AwesomeVersion before the first release that differs from upstream.
-- **Dependabot.** A medium-severity alert for `vitest` (a test-only dependency) cannot be fixed
-  automatically because the repository has no `package-lock.json`. It is being fixed in the fork
-  and offered upstream as a small pull request.
+- **Dependabot.** The repository has no `package-lock.json`, so Dependabot cannot open fixes for
+  JavaScript dependencies. The `vitest` alert is fixed by hand (see the `package.json` row above)
+  and will be offered upstream as a small pull request. How future Dependabot pull requests on the
+  fork are handled is still open.
