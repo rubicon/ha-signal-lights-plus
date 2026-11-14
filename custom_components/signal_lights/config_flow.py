@@ -247,7 +247,10 @@ class SignalLightsOptionsFlow(OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Add a signal — step 1: name, color, trigger type, trigger mode."""
-        if user_input is not None:
+        errors: dict[str, str] = {}
+        if user_input is not None and len(str(user_input.get("effect") or "").strip()) > 64:
+            errors["effect"] = "effect_too_long"
+        if user_input is not None and not errors:
             self._signal_data = {
                 "name": user_input["name"],
                 "color": _parse_color(user_input["color"]),
@@ -303,6 +306,7 @@ class SignalLightsOptionsFlow(OptionsFlow):
                     ),
                 }
             ),
+            errors=errors,
         )
 
     # -----------------------------------------------------------------------

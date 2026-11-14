@@ -66,7 +66,14 @@ def _validate_effect(value: Any) -> str:
     return value
 
 
-_BRIGHTNESS = vol.All(vol.Coerce(int), vol.Range(min=1, max=255))
+def _reject_bool(value: Any) -> Any:
+    """Voluptuous validator: True/False would coerce to brightness 1/0."""
+    if isinstance(value, bool):
+        raise vol.Invalid("Brightness must be a number from 1 to 255")
+    return value
+
+
+_BRIGHTNESS = vol.All(_reject_bool, vol.Coerce(int), vol.Range(min=1, max=255))
 
 TRIGGER_SIGNAL_SCHEMA = vol.Schema(
     {
@@ -161,7 +168,7 @@ UPDATE_SIGNAL_SCHEMA = vol.Schema(
         vol.Optional("template"): cv.string,
         vol.Optional("duration"): vol.Coerce(int),
         vol.Optional("light_filter"): [cv.entity_id],
-        vol.Optional("effect"): _validate_effect,
+        vol.Optional("effect"): vol.Any(None, _validate_effect),
         vol.Optional("brightness"): vol.Any(None, _BRIGHTNESS),
         **_ENTRY_ID_FIELD,
     }

@@ -226,3 +226,30 @@ def test_trigger_signal_without_overrides_passes_none():
     coord.async_trigger_signal.assert_awaited_once_with(
         "Water empty", effect=None, brightness=None
     )
+
+
+# ---------------------------------------------------------------------------
+# Review follow-ups: null effect, boolean brightness
+# ---------------------------------------------------------------------------
+
+
+def test_update_signal_schema_accepts_a_null_effect_to_clear_it():
+    data = services.UPDATE_SIGNAL_SCHEMA({"name": "Water empty", "effect": None})
+    assert data["effect"] is None
+
+
+def test_update_signal_with_a_null_effect_clears_it():
+    coord = _coordinator(existing={"name": "Water empty", "trigger_mode": "entity_on"})
+    _run("update_signal", services.UPDATE_SIGNAL_SCHEMA, {"name": "Water empty", "effect": None}, coord)
+    assert coord.store.update_signal.call_args.args[1] == {"effect": None}
+
+
+@pytest.mark.parametrize("brightness", [True, False])
+def test_boolean_brightness_is_rejected(brightness):
+    for schema, base in (
+        (services.ADD_SIGNAL_SCHEMA, ADD_BASE),
+        (services.UPDATE_SIGNAL_SCHEMA, {"name": "Water empty"}),
+        (services.TRIGGER_SIGNAL_SCHEMA, {"name": "Water empty"}),
+    ):
+        with pytest.raises(services.vol.Invalid):
+            schema({**base, "brightness": brightness})

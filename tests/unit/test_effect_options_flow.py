@@ -79,3 +79,17 @@ def test_the_effect_is_trimmed():
 def test_flow_state_is_cleared_after_saving():
     flow, _ = _add_signal({**STEP_ONE, "effect": "pulse", "brightness": 80})
     assert flow._signal_data == {}
+
+
+def test_an_effect_over_64_characters_is_refused_with_a_form_error():
+    flow, store = _flow()
+    result = asyncio.run(flow.async_step_add_signal({**STEP_ONE, "effect": "x" * 65}))
+    assert result["type"] == "form"
+    assert result["step_id"] == "add_signal"
+    assert result["errors"] == {"effect": "effect_too_long"}
+    flow.async_step_trigger_entity_on.assert_not_awaited()
+
+
+def test_an_effect_of_exactly_64_characters_is_accepted():
+    _, store = _add_signal({**STEP_ONE, "effect": "x" * 64})
+    assert _saved(store)["effect"] == "x" * 64

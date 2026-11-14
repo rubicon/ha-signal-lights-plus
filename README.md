@@ -130,6 +130,7 @@ brightness: 80
 - A signal's brightness replaces the light's registered brightness while that signal is showing. Without it, the light's registered brightness is used.
 - `trigger_signal` accepts `effect` and `brightness` too. They apply to that one activation and take precedence over the signal's own values. Brightness precedence: `trigger_signal`, then the signal, then the light.
 - In `update_signal`, send `effect: ""` or `brightness: null` to remove a setting.
+- When a light that was running an effect next shows a signal without one, Signal Lights sends the effect `off` once, if the light lists it.
 - Signals with neither setting behave exactly as before.
 
 ```yaml
