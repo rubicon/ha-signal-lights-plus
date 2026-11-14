@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+from typing import Any
 
 import voluptuous as vol
 
@@ -57,9 +58,21 @@ def _validate_notify_target(value: str) -> str:
 # Shared optional config_entry_id field used in all service schemas
 _ENTRY_ID_FIELD = {vol.Optional("config_entry_id"): _validate_entry_id}
 
+def _validate_effect(value: Any) -> str:
+    """Voluptuous validator: a light effect name, trimmed; blank means "none"."""
+    value = cv.string(value).strip()
+    if len(value) > 64:
+        raise vol.Invalid("Effect must be 64 characters or fewer")
+    return value
+
+
+_BRIGHTNESS = vol.All(vol.Coerce(int), vol.Range(min=1, max=255))
+
 TRIGGER_SIGNAL_SCHEMA = vol.Schema(
     {
         vol.Required("name"): _validate_signal_name,
+        vol.Optional("effect"): _validate_effect,
+        vol.Optional("brightness"): _BRIGHTNESS,
         **_ENTRY_ID_FIELD,
     }
 )
@@ -120,6 +133,8 @@ ADD_SIGNAL_SCHEMA = vol.Schema(
         vol.Optional("template", default=""): cv.string,
         vol.Optional("duration", default=0): vol.Coerce(int),
         vol.Optional("light_filter", default=[]): [cv.entity_id],
+        vol.Optional("effect"): _validate_effect,
+        vol.Optional("brightness"): _BRIGHTNESS,
         **_ENTRY_ID_FIELD,
     }
 )
@@ -146,6 +161,8 @@ UPDATE_SIGNAL_SCHEMA = vol.Schema(
         vol.Optional("template"): cv.string,
         vol.Optional("duration"): vol.Coerce(int),
         vol.Optional("light_filter"): [cv.entity_id],
+        vol.Optional("effect"): _validate_effect,
+        vol.Optional("brightness"): vol.Any(None, _BRIGHTNESS),
         **_ENTRY_ID_FIELD,
     }
 )
@@ -316,7 +333,11 @@ async def async_register_services(hass: HomeAssistant) -> None:
         """Handle signal_lights.trigger_signal."""
         coord = _resolve_coordinator(hass, call)
         name = call.data["name"]
-        result = await coord.async_trigger_signal(name)
+        result = await coord.async_trigger_signal(
+            name,
+            effect=call.data.get("effect") or None,
+            brightness=call.data.get("brightness"),
+        )
         if not result:
             raise ServiceValidationError(f"Signal '{name}' was not found")
 
@@ -455,6 +476,10 @@ async def async_register_services(hass: HomeAssistant) -> None:
             "duration": call.data.get("duration", 0),
             "light_filter": call.data.get("light_filter", []),
         }
+        if call.data.get("effect"):
+            signal_def["effect"] = call.data["effect"]
+        if call.data.get("brightness") is not None:
+            signal_def["brightness"] = call.data["brightness"]
         await coord.store.add_signal(signal_def)
         await coord.async_reload_config()
         _LOGGER.info("Signal Lights: added signal '%s'", name)
@@ -507,6 +532,10 @@ async def async_register_services(hass: HomeAssistant) -> None:
             updates["duration"] = call.data["duration"]
         if "light_filter" in call.data:
             updates["light_filter"] = call.data["light_filter"]
+        if "effect" in call.data:
+            updates["effect"] = call.data["effect"] or None
+        if "brightness" in call.data:
+            updates["brightness"] = call.data["brightness"]
 
         # Determine effective trigger_mode and trigger_config for validation/regen
         new_trigger_mode = call.data.get("trigger_mode", existing.get("trigger_mode", "template"))
