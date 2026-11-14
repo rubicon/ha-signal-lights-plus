@@ -308,13 +308,12 @@ class SignalEngine:
         if signal is None:
             return False
 
-        # Don't double-activate; a repeat call may refresh the overrides
+        # Don't double-activate; a repeat call replaces the overrides, so a
+        # re-trigger without any goes back to the signal's own values
         for active in self._active:
             if active.signal.name == signal_name and not active.is_expired:
-                if effect is not None:
-                    active.effect = effect
-                if brightness is not None:
-                    active.brightness = brightness
+                active.effect = effect
+                active.brightness = brightness
                 return True
 
         expires_at = None

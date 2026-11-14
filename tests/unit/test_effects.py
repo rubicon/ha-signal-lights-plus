@@ -53,6 +53,7 @@ def _coordinator(
     coord.hass.states.get = _get_state
     coord._cycle_index = 0
     coord._cycle_cancel = None
+    coord._effect_lights = set()
     coord._get_cycle_interval = lambda: cycle_interval
     coord._cancel_cycle_timer = lambda: None
     return coord
@@ -235,3 +236,107 @@ def test_build_data_reports_effect_and_brightness_for_each_signal():
     by_name = {s["name"]: s for s in data["signals"]}
     assert (by_name["with"]["effect"], by_name["with"]["brightness"]) == ("blink", 80)
     assert (by_name["without"]["effect"], by_name["without"]["brightness"]) == (None, None)
+
+
+# ---------------------------------------------------------------------------
+# An effect must not outlive the signal that set it
+# ---------------------------------------------------------------------------
+
+OFF_LIGHT = {"effect_list": ["blink", "pulse", "off"]}
+
+
+def _last_turn_on(coord: SignalLightsCoordinator) -> dict:
+    return _calls(coord)["light.zbt2"]
+
+
+def _displacement_coordinator(light_state: dict) -> SignalLightsCoordinator:
+    coord = _coordinator(
+        [
+            _signal("plain", 0, color=(0, 255, 0)),
+            _signal("fx", 1, effect="blink"),
+        ],
+        [LightConfig("light.zbt2", 255)],
+        {"light.zbt2": light_state},
+    )
+    coord._effect_lights = set()
+    return coord
+
+
+def test_a_plain_signal_that_displaces_an_effect_turns_the_effect_off():
+    coord = _displacement_coordinator(OFF_LIGHT)
+    coord.engine.activate_signal("fx")
+    asyncio.run(coord._apply_light_states())
+    assert _last_turn_on(coord)["effect"] == "blink"
+
+    coord.hass.services.async_call.reset_mock()
+    coord.engine.activate_signal("plain")
+    asyncio.run(coord._apply_light_states())
+    assert _last_turn_on(coord)["effect"] == "off"
+
+
+def test_the_off_effect_is_sent_once_only():
+    coord = _displacement_coordinator(OFF_LIGHT)
+    coord.engine.activate_signal("fx")
+    asyncio.run(coord._apply_light_states())
+    coord.engine.activate_signal("plain")
+    asyncio.run(coord._apply_light_states())
+
+    coord.hass.services.async_call.reset_mock()
+    asyncio.run(coord._apply_light_states())
+    assert "effect" not in _last_turn_on(coord)
+
+
+def test_no_off_effect_when_the_light_does_not_list_it():
+    coord = _displacement_coordinator(BLINK_LIGHT)
+    coord.engine.activate_signal("fx")
+    asyncio.run(coord._apply_light_states())
+
+    coord.hass.services.async_call.reset_mock()
+    coord.engine.activate_signal("plain")
+    asyncio.run(coord._apply_light_states())
+    assert "effect" not in _last_turn_on(coord)
+
+
+def test_turning_the_light_off_forgets_the_effect():
+    coord = _displacement_coordinator(OFF_LIGHT)
+    coord.engine.activate_signal("fx")
+    asyncio.run(coord._apply_light_states())
+    coord.engine.dismiss_signal("fx")
+    asyncio.run(coord._apply_light_states())  # nothing active: turn_off
+
+    coord.hass.services.async_call.reset_mock()
+    coord.engine.activate_signal("plain")
+    asyncio.run(coord._apply_light_states())
+    assert "effect" not in _last_turn_on(coord)
+
+
+def test_legacy_signals_never_send_an_effect_even_if_the_light_lists_off():
+    coord = _coordinator(
+        [_signal("plain", 0)],
+        [LightConfig("light.zbt2", 255)],
+        {"light.zbt2": OFF_LIGHT},
+    )
+    coord._effect_lights = set()
+    coord.engine.activate_signal("plain")
+    asyncio.run(coord._apply_light_states())
+    assert "effect" not in _last_turn_on(coord)
+
+
+def test_cycling_from_an_effect_signal_to_a_plain_one_turns_the_effect_off():
+    coord = _displacement_coordinator(OFF_LIGHT)
+    coord._cycle_interval = 5
+    coord._get_cycle_interval = lambda: 5
+    coord.engine.activate_signal("plain")
+    coord.engine.activate_signal("fx")
+    coord._cycle_cancel = object()
+    active = coord.engine.get_active_signals()
+    fx_index = [a.signal.name for a in active].index("fx")
+
+    coord._cycle_index = fx_index
+    asyncio.run(coord._apply_light_states())
+    assert _last_turn_on(coord)["effect"] == "blink"
+
+    coord.hass.services.async_call.reset_mock()
+    coord._cycle_index = 1 - fx_index
+    asyncio.run(coord._apply_light_states())
+    assert _last_turn_on(coord)["effect"] == "off"

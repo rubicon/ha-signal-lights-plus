@@ -974,6 +974,13 @@ class TestEffectAndBrightness:
         assert len(engine.get_active_signals()) == 1
         assert engine.evaluate()["light.test"]["effect"] == "pulse"
 
+    def test_retriggering_without_overrides_drops_the_previous_ones(self):
+        engine = _effect_engine({"effect": "blink", "brightness": 120})
+        engine.activate_signal("alert", effect="pulse", brightness=10)
+        assert engine.activate_signal("alert") is True
+        state = engine.evaluate()["light.test"]
+        assert (state["effect"], state["brightness"]) == ("blink", 120)
+
     @pytest.mark.parametrize("bad", [0, -5, 256, 300, "x", 12.5, True, None])
     def test_invalid_brightness_is_ignored(self, bad):
         engine = _effect_engine({"brightness": bad}, light_brightness=200)

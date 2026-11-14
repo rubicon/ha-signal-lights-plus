@@ -61,6 +61,8 @@ class SignalLightsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # Signal cycling state
         self._cycle_index: int = 0
         self._cycle_cancel: Callable | None = None
+        # Lights we last sent an effect to, so a later signal without one can end it
+        self._effect_lights: set[str] = set()
         # Event signals do not fire until Home Assistant has started
         self._events_armed: bool = False
         self._start_unsub: Callable | None = None
@@ -233,17 +235,30 @@ class SignalLightsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         brightness: int,
         effect: str | None,
     ) -> dict[str, Any]:
-        """Build light.turn_on data, adding the effect only if the light lists it."""
+        """Build light.turn_on data, adding the effect only if the light lists it.
+
+        A light we sent an effect to may keep running it, so when the next signal
+        has no effect, send "off" once, if the light lists it.
+        """
         data: dict[str, Any] = {
             "entity_id": entity_id,
             "rgb_color": list(rgb),
             "brightness": brightness,
         }
-        if effect:
-            state = self.hass.states.get(entity_id)
-            effect_list = state.attributes.get("effect_list") if state else None
-            if isinstance(effect_list, (list, tuple)) and effect in effect_list:
-                data["effect"] = effect
+        state = (
+            self.hass.states.get(entity_id)
+            if effect or entity_id in self._effect_lights
+            else None
+        )
+        effect_list = state.attributes.get("effect_list") if state else None
+        listed = isinstance(effect_list, (list, tuple))
+        if effect and listed and effect in effect_list:
+            data["effect"] = effect
+            self._effect_lights.add(entity_id)
+        elif entity_id in self._effect_lights:
+            self._effect_lights.discard(entity_id)
+            if listed and "off" in effect_list:
+                data["effect"] = "off"
         return data
 
     async def _apply_light_states(self) -> None:
@@ -285,6 +300,7 @@ class SignalLightsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         # Light not in this signal's filter — use normal evaluation
                         winner = self.engine.get_winning_active_for_light(light.entity_id)
                         if winner is None:
+                            self._effect_lights.discard(light.entity_id)
                             await self.hass.services.async_call(
                                 "light", "turn_off",
                                 {"entity_id": light.entity_id},
@@ -313,6 +329,7 @@ class SignalLightsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             for entity_id, state in states.items():
                 try:
                     if state is None:
+                        self._effect_lights.discard(entity_id)
                         await self.hass.services.async_call(
                             "light",
                             "turn_off",
