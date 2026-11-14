@@ -56,6 +56,32 @@ function _triggerDescription(signal) {
   }
 }
 
+function _effectDetail(signal) {
+  const parts = [];
+  if (signal.effect) parts.push('Effect: ' + _esc(signal.effect));
+  if (signal.brightness != null) parts.push('Brightness: ' + _esc(String(signal.brightness)));
+  if (parts.length === 0) return '';
+  return `<span class="item-detail signal-fx">${parts.join(' · ')}</span>`;
+}
+
+function _readEffectFields(root, idPrefix) {
+  const effect = root.querySelector(`#${idPrefix}-effect`).value.trim();
+  const rawBrightness = parseInt(root.querySelector(`#${idPrefix}-brightness`).value, 10);
+  return { effect, brightness: Number.isNaN(rawBrightness) ? null : rawBrightness };
+}
+
+function _effectFieldsHtml(idPrefix, effect, brightness) {
+  return `
+        <div class="form-row">
+          <label>Effect (optional)</label>
+          <input type="text" id="${idPrefix}-effect" value="${_esc(effect)}" placeholder="blink" />
+        </div>
+        <div class="form-row">
+          <label>Brightness (optional, 1-255)</label>
+          <input type="number" id="${idPrefix}-brightness" value="${_esc(brightness)}" min="1" max="255" placeholder="Light default" />
+        </div>`;
+}
+
 /* ── Shared form builder helpers ────────────────────────────────────────── */
 
 /**
@@ -852,6 +878,7 @@ class SignalLightsCard extends HTMLElement {
           <div class="signal-info">
             <span class="item-name ${isActive ? 'bold' : ''}">#${i + 1} ${_esc(s.name)}</span>
             <span class="item-detail">${typeBadge} ${_esc(s.trigger_type)} · ${triggerDesc}</span>
+            ${_effectDetail(s)}
           </div>
           <div class="signal-actions">
             ${s.trigger_type === 'event' && !isActive ? `<button class="btn-small btn-trigger" data-name="${_esc(s.name)}" title="Trigger">▶</button>` : ''}
@@ -972,6 +999,10 @@ class SignalLightsCard extends HTMLElement {
     const editColor = signal._editColor || signal.color || [255, 0, 0];
     const color = editColor;
     const hexColor = _rgbToHex(color);
+    const editEffect = signal._editEffect !== undefined ? signal._editEffect : (signal.effect || '');
+    const editBrightness = signal._editBrightness !== undefined
+      ? signal._editBrightness
+      : (signal.brightness != null ? String(signal.brightness) : '');
 
     const triggerFields = _buildTriggerFieldsHtml(mode, cfg, signal, 'sl-edit-sig');
 
@@ -1013,6 +1044,7 @@ class SignalLightsCard extends HTMLElement {
           <label>Duration (seconds)</label>
           <input type="number" id="sl-edit-sig-duration" value="${signal.duration || 60}" min="1" max="86400" />
         </div>
+        ${_effectFieldsHtml('sl-edit-sig', editEffect, editBrightness)}
         <div class="form-actions">
           <button class="btn-primary" id="sl-edit-sig-save">Save</button>
           <button class="btn-secondary" id="sl-edit-sig-cancel">Cancel</button>
@@ -1038,6 +1070,10 @@ class SignalLightsCard extends HTMLElement {
           parseInt(bEl.value) || 0,
         ];
       }
+      const effectEl = container.querySelector('#sl-edit-sig-effect');
+      const brightnessEl = container.querySelector('#sl-edit-sig-brightness');
+      if (effectEl) updatedSignal._editEffect = effectEl.value;
+      if (brightnessEl) updatedSignal._editBrightness = brightnessEl.value;
       this._renderEditSignalForm(container, updatedSignal);
     });
 
@@ -1093,6 +1129,7 @@ class SignalLightsCard extends HTMLElement {
         trigger_mode: newTriggerMode,
         trigger_config: newTriggerConfig,
         duration: newDuration,
+        ..._readEffectFields(container, 'sl-edit-sig'),
         ...this._entryIdData(),
       };
       if (newTriggerMode === 'template') {
@@ -1311,6 +1348,7 @@ class SignalLightsCard extends HTMLElement {
           <label>Duration (seconds)</label>
           <input type="number" id="sl-sig-duration" value="60" min="1" max="86400" />
         </div>
+        ${_effectFieldsHtml('sl-sig', '', '')}
         <div class="form-actions">
           <button class="btn-primary" id="sl-add-signal-submit">Add Signal</button>
           <button class="btn-secondary" id="sl-add-signal-cancel">Cancel</button>
@@ -1369,7 +1407,7 @@ class SignalLightsCard extends HTMLElement {
         return;
       }
 
-      this._callService('signal_lights', 'add_signal', {
+      const serviceData = {
         name,
         color,
         trigger_type: triggerType,
@@ -1378,7 +1416,12 @@ class SignalLightsCard extends HTMLElement {
         template,
         duration,
         ...this._entryIdData(),
-      }).then(() => {
+      };
+      const { effect, brightness } = _readEffectFields(form, 'sl-sig');
+      if (effect) serviceData.effect = effect;
+      if (brightness !== null) serviceData.brightness = brightness;
+
+      this._callService('signal_lights', 'add_signal', serviceData).then(() => {
         this._showAddSignal = false;
         // Re-render so the new signal appears — the WS update was suppressed
         // while the form was open (issue #13).
