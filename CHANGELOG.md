@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.3.2.1] - 2026-11-14
+
+### Added
+- Each signal can now have its own light effect and brightness. Set them when
+  you add or edit a signal in the card or the Configure screen, or pass
+  `effect` and `brightness` to `trigger_signal`, `add_signal` and
+  `update_signal`. The effect is sent only to lights that list it in their
+  `effect_list`; other lights ignore it. Signals without an effect or
+  brightness behave exactly as before.
+- When a signal with an effect stops winning, lights that support the `off`
+  effect are switched back to it so the effect does not keep running.
+
 ## [1.3.2] - 2026-11-02
 
 ### Fixed

@@ -44,13 +44,23 @@ One row per upstream-owned file this fork changes on purpose.
 | File | What differs | Why | Tracking issue |
 |---|---|---|---|
 | `package.json` | `vitest` requirement raised from `^3.0.0` to `^4.1.11` | Fixes [GHSA-82fw-gwwq-j7x9](https://github.com/advisories/GHSA-82fw-gwwq-j7x9) in the test runner; Dependabot cannot open the fix without a lockfile. Remove this row when upstream takes the change | https://github.com/rubicon/ha-signal-lights-plus/issues/3 |
+| `.github/workflows/release.yml` | The stable-version pattern also accepts a fourth number (`X.Y.Z.N`) | Fork releases need a version that sorts above the upstream release they build on (see Release mechanism). Nothing else in the workflow changes | https://github.com/rubicon/ha-signal-lights-plus/issues/7 |
+| `custom_components/signal_lights/manifest.json` | `version` is a fork version (`1.3.2.1`), not upstream's | Fork releases are published from this repository | https://github.com/rubicon/ha-signal-lights-plus/issues/7 |
 
 ## Release mechanism
 
 The fork releases the same way upstream does: a pull request that bumps `version` in
 `custom_components/signal_lights/manifest.json` and adds a matching `CHANGELOG.md` section, after
 which the Release workflow tags and publishes. This follows upstream's convention to keep the
-workflows identical. The fork's own version tag scheme is still open (see Open decisions).
+workflows identical, apart from the version pattern in the divergence table.
+
+**Version scheme.** A fork release adds a fourth number to the upstream version it builds on:
+`1.3.2.1` is the first fork release on top of upstream `1.3.2`, then `1.3.2.2`, and so on. When
+upstream releases a new version, the fork rebases onto it and returns to three numbers or restarts
+the fourth (for example `1.3.3.1`). Tested with AwesomeVersion (the comparison HACS and Home
+Assistant use): `1.3.2.1 > 1.3.2` is true. The alternatives `1.3.2-plus.1`, `1.3.2+plus.1` and
+`1.3.2b1` all sort below `1.3.2`, so HACS would never offer them as an update. A version with a
+fourth number is classified as a stable (non-pre-release) release.
 
 ## Known fork-specific CI behavior
 
@@ -63,9 +73,6 @@ workflows identical. The fork's own version tag scheme is still open (see Open d
 
 These will add rows to the divergence table when decided:
 
-- **Release tag scheme.** Upstream's Release workflow accepts only `X.Y.Z` or PEP 440 pre-release
-  versions. The fork needs a version that HACS sorts above the matching upstream release. The
-  candidates are tested with AwesomeVersion before the first release that differs from upstream.
 - **Dependabot.** The repository has no `package-lock.json`, so Dependabot cannot open fixes for
   JavaScript dependencies. The `vitest` alert is fixed by hand (see the `package.json` row above)
   and will be offered upstream as a small pull request. How future Dependabot pull requests on the
