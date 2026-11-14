@@ -100,6 +100,54 @@ class TestSignalLifecycleApi:
         entries = ws.get_signal_lights_config()
         assert [s["name"] for s in entries[0]["signals"]] == new_order
 
+    def test_signal_effect_and_brightness_round_trip(self, ws, cleanup, unique_name):
+        name = f"{unique_name}_fx"
+        assert ws.call_service("signal_lights", "add_signal", {
+            "name": name,
+            "color": [10, 20, 30],
+            "trigger_type": "condition",
+            "trigger_mode": "entity_on",
+            "trigger_config": {"entity_id": "binary_sensor.x"},
+            "effect": "pulse",
+            "brightness": 80,
+        })["success"]
+        cleanup["signals"].append(name)
+
+        def stored():
+            entries = ws.get_signal_lights_config()
+            return next(s for s in entries[0]["signals"] if s["name"] == name)
+
+        assert (stored()["effect"], stored()["brightness"]) == ("pulse", 80)
+
+        assert ws.call_service("signal_lights", "update_signal", {
+            "name": name, "effect": "blink", "brightness": 40,
+        })["success"]
+        assert (stored()["effect"], stored()["brightness"]) == ("blink", 40)
+
+        assert ws.call_service("signal_lights", "update_signal", {
+            "name": name, "effect": "", "brightness": None,
+        })["success"]
+        assert "effect" not in stored()
+        assert "brightness" not in stored()
+
+    def test_signal_brightness_range_is_enforced(self, ws, cleanup, unique_name):
+        base = {
+            "color": [10, 20, 30],
+            "trigger_type": "condition",
+            "trigger_mode": "entity_on",
+            "trigger_config": {"entity_id": "binary_sensor.x"},
+        }
+        ok_name = f"{unique_name}_max"
+        assert ws.call_service("signal_lights", "add_signal", {
+            **base, "name": ok_name, "brightness": 255,
+        })["success"]
+        cleanup["signals"].append(ok_name)
+
+        result = ws.call_service("signal_lights", "add_signal", {
+            **base, "name": f"{unique_name}_bad", "brightness": 300,
+        })
+        assert not result["success"]
+
     def test_reorder_with_unknown_name_errors(self, ws):
         result = ws.call_service("signal_lights", "reorder_signals", {
             "order": ["ghost_signal"],

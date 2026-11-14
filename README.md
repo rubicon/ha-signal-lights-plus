@@ -111,6 +111,36 @@ trigger_config:
   direction: below
 ```
 
+### Effect and brightness
+
+A signal can also set a light effect (for example `blink` or `pulse`) and a brightness (1 to 255). Both are optional.
+
+```yaml
+name: Water Tank Empty
+color: [0, 0, 255]
+trigger_type: condition
+trigger_mode: entity_on
+trigger_config:
+  entity_id: binary_sensor.water_tank_empty
+effect: pulse
+brightness: 80
+```
+
+- The effect is sent to a light only when that light lists it in its `effect_list` attribute. A light without that effect still gets the color and brightness.
+- A signal's brightness replaces the light's registered brightness while that signal is showing. Without it, the light's registered brightness is used.
+- `trigger_signal` accepts `effect` and `brightness` too. They apply to that one activation and take precedence over the signal's own values. Brightness precedence: `trigger_signal`, then the signal, then the light.
+- In `update_signal`, send `effect: ""` or `brightness: null` to remove a setting.
+- When a light that was running an effect next shows a signal without one, Signal Lights sends the effect `off` once, if the light lists it.
+- Signals with neither setting behave exactly as before.
+
+```yaml
+action: signal_lights.trigger_signal
+data:
+  name: Person A Home
+  effect: blink
+  brightness: 255
+```
+
 ## Notifications
 
 Signal Lights can send persistent notifications when signals are active:
@@ -134,7 +164,7 @@ Configure via the Lovelace card or the options flow.
 
 | Service | Description |
 |---------|-------------|
-| `signal_lights.trigger_signal` | Manually fire an event signal by name |
+| `signal_lights.trigger_signal` | Manually fire an event signal by name, optionally with an effect and brightness |
 | `signal_lights.dismiss_signal` | Dismiss an active signal |
 | `signal_lights.refresh` | Force re-evaluation of all signals |
 | `signal_lights.add_light` | Register a light entity as a signal output |

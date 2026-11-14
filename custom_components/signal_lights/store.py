@@ -73,6 +73,12 @@ class SignalLightsStore:
         sig.setdefault("color", [255, 255, 255])
         sig.setdefault("duration", 0)
         sig.setdefault("light_filter", [])
+        # Optional effect / brightness are stored only when set
+        effect = sig.get("effect")
+        if not isinstance(effect, str) or not effect.strip():
+            sig.pop("effect", None)
+        if sig.get("brightness") is None:
+            sig.pop("brightness", None)
         # Silently drop legacy priority field
         sig.pop("priority", None)
 

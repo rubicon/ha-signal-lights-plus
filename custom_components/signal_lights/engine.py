@@ -177,12 +177,28 @@ class Signal:
     sort_order: int = 0  # position in priority list (lower = higher priority)
     trigger_mode: str = "template"  # entity_equals, entity_on, numeric_threshold, template
     trigger_config: dict[str, Any] = field(default_factory=dict)
+    effect: str | None = None  # light effect name, sent only to lights that support it
+    brightness: int | None = None  # 1-255, replaces the light's brightness while this signal wins
 
     def applies_to_light(self, light_entity_id: str) -> bool:
         """Return True if this signal applies to the given light."""
         if not self.light_filter:
             return True
         return light_entity_id in self.light_filter
+
+
+def _valid_effect(value: Any) -> str | None:
+    """Return the effect name if it is a non-blank string, else None."""
+    if isinstance(value, str) and value.strip():
+        return value
+    return None
+
+
+def _valid_brightness(value: Any) -> int | None:
+    """Return the brightness if it is an int from 1 to 255, else None."""
+    if isinstance(value, int) and not isinstance(value, bool) and 1 <= value <= 255:
+        return value
+    return None
 
 
 @dataclass
@@ -200,6 +216,20 @@ class ActiveSignal:
     signal: Signal
     activated_at: float  # time.monotonic() timestamp
     expires_at: float | None = None  # None for condition signals
+    effect: str | None = None  # override from trigger_signal, this activation only
+    brightness: int | None = None  # override from trigger_signal, this activation only
+
+    def effective_effect(self) -> str | None:
+        """Return the effect to show: the activation override, else the signal's."""
+        return _valid_effect(self.effect) or _valid_effect(self.signal.effect)
+
+    def effective_brightness(self, default: int) -> int:
+        """Return the brightness to show: override, else the signal's, else default."""
+        for candidate in (self.brightness, self.signal.brightness):
+            valid = _valid_brightness(candidate)
+            if valid is not None:
+                return valid
+        return default
 
     @property
     def is_expired(self) -> bool:
@@ -260,19 +290,30 @@ class SignalEngine:
             )
         return self._sorted_cache
 
-    def activate_signal(self, signal_name: str, now: float | None = None) -> bool:
+    def activate_signal(
+        self,
+        signal_name: str,
+        now: float | None = None,
+        effect: str | None = None,
+        brightness: int | None = None,
+    ) -> bool:
         """Activate a signal by name (for event triggers or manual trigger).
 
-        Returns True if the signal was found and activated, False otherwise.
+        effect and brightness override the signal's own values for this
+        activation only. Returns True if the signal was found and activated,
+        False otherwise.
         """
         now = now if now is not None else time.monotonic()
         signal = self._find_signal(signal_name)
         if signal is None:
             return False
 
-        # Don't double-activate
+        # Don't double-activate; a repeat call replaces the overrides, so a
+        # re-trigger without any goes back to the signal's own values
         for active in self._active:
             if active.signal.name == signal_name and not active.is_expired:
+                active.effect = effect
+                active.brightness = brightness
                 return True
 
         expires_at = None
@@ -283,6 +324,8 @@ class SignalEngine:
             signal=signal,
             activated_at=now,
             expires_at=expires_at,
+            effect=effect,
+            brightness=brightness,
         ))
         self._invalidate_cache()
         return True
@@ -316,31 +359,37 @@ class SignalEngine:
         self.cleanup_expired()
         return list(self._get_sorted_active())
 
-    def get_winning_signal_for_light(self, light_entity_id: str) -> Signal | None:
-        """Return the highest-priority active signal that applies to a light."""
+    def get_winning_active_for_light(self, light_entity_id: str) -> ActiveSignal | None:
+        """Return the highest-priority active entry that applies to a light."""
         self.cleanup_expired()
         for active in self._get_sorted_active():
             if active.signal.applies_to_light(light_entity_id):
-                return active.signal
+                return active
         return None
+
+    def get_winning_signal_for_light(self, light_entity_id: str) -> Signal | None:
+        """Return the highest-priority active signal that applies to a light."""
+        active = self.get_winning_active_for_light(light_entity_id)
+        return active.signal if active is not None else None
 
     def evaluate(self) -> dict[str, dict[str, Any] | None]:
         """Evaluate all lights and return desired states.
 
         Returns a dict of {light_entity_id: state_dict_or_None}.
-        state_dict has keys: rgb_color (tuple), brightness (int).
-        None means the light should be turned off.
+        state_dict has keys: rgb_color (tuple), brightness (int), effect
+        (str or None). None means the light should be turned off.
         """
         result: dict[str, dict[str, Any] | None] = {}
         for light in self._lights:
-            winner = self.get_winning_signal_for_light(light.entity_id)
+            winner = self.get_winning_active_for_light(light.entity_id)
             if winner is None:
                 result[light.entity_id] = None
             else:
                 result[light.entity_id] = {
-                    "rgb_color": winner.color,
-                    "brightness": light.brightness,
-                    "signal_name": winner.name,
+                    "rgb_color": winner.signal.color,
+                    "brightness": winner.effective_brightness(light.brightness),
+                    "effect": winner.effective_effect(),
+                    "signal_name": winner.signal.name,
                 }
         return result
 

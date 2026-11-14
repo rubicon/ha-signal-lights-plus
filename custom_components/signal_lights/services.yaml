@@ -10,6 +10,23 @@ trigger_signal:
       required: true
       selector:
         text:
+    effect:
+      name: Effect
+      description: >
+        Optional light effect (for example blink or pulse) for this activation only. It is sent only to lights whose effect list contains it.
+      required: false
+      selector:
+        text:
+    brightness:
+      name: Brightness
+      description: >
+        Optional brightness (1 to 255) for this activation only. Overrides the signal's brightness and the light's registered brightness.
+      required: false
+      selector:
+        number:
+          min: 1
+          max: 255
+          mode: slider
     config_entry_id:
       name: Setup (config entry ID)
       description: Target Signal Lights setup. Optional when only one setup exists.
@@ -162,6 +179,23 @@ add_signal:
         entity:
           domain: light
           multiple: true
+    effect:
+      name: Effect
+      description: >
+        Optional light effect (for example blink or pulse). It is sent only to lights whose effect list contains it; other lights still get the color.
+      required: false
+      selector:
+        text:
+    brightness:
+      name: Brightness
+      description: >
+        Optional brightness (1 to 255) used while this signal wins. Without it, each light's registered brightness is used.
+      required: false
+      selector:
+        number:
+          min: 1
+          max: 255
+          mode: slider
     config_entry_id:
       name: Setup (config entry ID)
       description: Target Signal Lights setup. Optional when only one setup exists.
@@ -243,6 +277,23 @@ update_signal:
         entity:
           domain: light
           multiple: true
+    effect:
+      name: Effect
+      description: >
+        Light effect for this signal. Send an empty value to remove the effect.
+      required: false
+      selector:
+        text:
+    brightness:
+      name: Brightness
+      description: >
+        Brightness (1 to 255) for this signal. To remove it and use each light's registered brightness, send null in YAML mode or clear it in the card.
+      required: false
+      selector:
+        number:
+          min: 1
+          max: 255
+          mode: slider
     config_entry_id:
       name: Setup (config entry ID)
       description: Target Signal Lights setup. Optional when only one setup exists.
