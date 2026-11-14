@@ -130,14 +130,21 @@ class TestSignalLifecycleApi:
         assert "effect" not in stored()
         assert "brightness" not in stored()
 
-    def test_signal_brightness_out_of_range_rejected(self, ws, unique_name):
-        result = ws.call_service("signal_lights", "add_signal", {
-            "name": f"{unique_name}_bad",
+    def test_signal_brightness_range_is_enforced(self, ws, cleanup, unique_name):
+        base = {
             "color": [10, 20, 30],
             "trigger_type": "condition",
             "trigger_mode": "entity_on",
             "trigger_config": {"entity_id": "binary_sensor.x"},
-            "brightness": 300,
+        }
+        ok_name = f"{unique_name}_max"
+        assert ws.call_service("signal_lights", "add_signal", {
+            **base, "name": ok_name, "brightness": 255,
+        })["success"]
+        cleanup["signals"].append(ok_name)
+
+        result = ws.call_service("signal_lights", "add_signal", {
+            **base, "name": f"{unique_name}_bad", "brightness": 300,
         })
         assert not result["success"]
 
