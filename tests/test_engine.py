@@ -896,3 +896,105 @@ class TestStartupArming:
 
     def test_condition_falsy_does_not_activate(self):
         assert should_activate_from_template("condition", False, False) is False
+
+
+# ---------------------------------------------------------------------------
+# Per-signal effect and brightness
+# ---------------------------------------------------------------------------
+
+
+def _effect_engine(signal_kwargs=None, light_brightness=255):
+    """Return an engine with one signal on one light."""
+    engine = SignalEngine()
+    engine.set_lights([LightConfig(entity_id="light.test", brightness=light_brightness)])
+    engine.set_signals([
+        Signal(
+            name="alert",
+            color=(255, 0, 0),
+            trigger_type="condition",
+            template="{{ true }}",
+            sort_order=0,
+            **(signal_kwargs or {}),
+        )
+    ])
+    return engine
+
+
+class TestEffectAndBrightness:
+    """A signal can carry its own effect and brightness."""
+
+    def test_signal_effect_and_brightness_default_to_none(self):
+        signal = Signal(
+            name="x", color=(1, 2, 3), trigger_type="condition", template=""
+        )
+        assert signal.effect is None
+        assert signal.brightness is None
+
+    def test_evaluate_includes_effect_key_as_none_when_unset(self):
+        engine = _effect_engine()
+        engine.activate_signal("alert")
+        state = engine.evaluate()["light.test"]
+        assert state["effect"] is None
+
+    def test_evaluate_returns_signal_effect(self):
+        engine = _effect_engine({"effect": "blink"})
+        engine.activate_signal("alert")
+        assert engine.evaluate()["light.test"]["effect"] == "blink"
+
+    def test_signal_brightness_replaces_light_brightness(self):
+        engine = _effect_engine({"brightness": 120}, light_brightness=255)
+        engine.activate_signal("alert")
+        assert engine.evaluate()["light.test"]["brightness"] == 120
+
+    def test_without_signal_brightness_light_brightness_is_used(self):
+        engine = _effect_engine(light_brightness=200)
+        engine.activate_signal("alert")
+        assert engine.evaluate()["light.test"]["brightness"] == 200
+
+    def test_trigger_override_beats_signal_values(self):
+        engine = _effect_engine({"effect": "blink", "brightness": 120})
+        engine.activate_signal("alert", effect="pulse", brightness=40)
+        state = engine.evaluate()["light.test"]
+        assert state["effect"] == "pulse"
+        assert state["brightness"] == 40
+
+    def test_override_applies_to_that_activation_only(self):
+        engine = _effect_engine({"effect": "blink", "brightness": 120})
+        engine.activate_signal("alert", effect="pulse", brightness=40)
+        engine.deactivate_signal("alert")
+        engine.activate_signal("alert")
+        state = engine.evaluate()["light.test"]
+        assert state["effect"] == "blink"
+        assert state["brightness"] == 120
+
+    def test_reactivating_an_active_signal_updates_the_override(self):
+        engine = _effect_engine({"effect": "blink"})
+        assert engine.activate_signal("alert") is True
+        assert engine.activate_signal("alert", effect="pulse") is True
+        assert len(engine.get_active_signals()) == 1
+        assert engine.evaluate()["light.test"]["effect"] == "pulse"
+
+    @pytest.mark.parametrize("bad", [0, -5, 256, 300, "x", 12.5, True, None])
+    def test_invalid_brightness_is_ignored(self, bad):
+        engine = _effect_engine({"brightness": bad}, light_brightness=200)
+        engine.activate_signal("alert")
+        assert engine.evaluate()["light.test"]["brightness"] == 200
+
+    def test_invalid_override_brightness_falls_back_to_signal_value(self):
+        engine = _effect_engine({"brightness": 120})
+        engine.activate_signal("alert", brightness=999)
+        assert engine.evaluate()["light.test"]["brightness"] == 120
+
+    def test_blank_effect_is_treated_as_unset(self):
+        engine = _effect_engine({"effect": ""})
+        engine.activate_signal("alert")
+        assert engine.evaluate()["light.test"]["effect"] is None
+
+    def test_winning_active_for_light_returns_the_active_entry(self):
+        engine = _effect_engine()
+        engine.activate_signal("alert", effect="pulse")
+        active = engine.get_winning_active_for_light("light.test")
+        assert active is not None
+        assert active.signal.name == "alert"
+        assert active.effective_effect() == "pulse"
+        assert engine.get_winning_active_for_light("light.other") is not None
