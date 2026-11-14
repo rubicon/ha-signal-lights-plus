@@ -111,6 +111,8 @@ class SignalLightsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 sort_order=s.get("sort_order", 0),
                 trigger_mode=s.get("trigger_mode", "template"),
                 trigger_config=s.get("trigger_config", {}),
+                effect=s.get("effect"),
+                brightness=s.get("brightness"),
             )
             for s in self.store.get_signals()
         ]
@@ -224,6 +226,26 @@ class SignalLightsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self._cycle_index = 0
         self.hass.async_create_task(self._flush())
 
+    def _turn_on_data(
+        self,
+        entity_id: str,
+        rgb: tuple[int, int, int],
+        brightness: int,
+        effect: str | None,
+    ) -> dict[str, Any]:
+        """Build light.turn_on data, adding the effect only if the light lists it."""
+        data: dict[str, Any] = {
+            "entity_id": entity_id,
+            "rgb_color": list(rgb),
+            "brightness": brightness,
+        }
+        if effect:
+            state = self.hass.states.get(entity_id)
+            effect_list = state.attributes.get("effect_list") if state else None
+            if isinstance(effect_list, (list, tuple)) and effect in effect_list:
+                data["effect"] = effect
+        return data
+
     async def _apply_light_states(self) -> None:
         """Push the current signal evaluation to physical lights.
 
@@ -241,7 +263,8 @@ class SignalLightsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 )
             # Clamp index in case signals were removed
             self._cycle_index = self._cycle_index % len(active_signals)
-            cycle_signal = active_signals[self._cycle_index].signal
+            cycle_active = active_signals[self._cycle_index]
+            cycle_signal = cycle_active.signal
 
             # Build light states using the cycling signal, respecting light_filter
             for light in self.engine.lights:
@@ -250,16 +273,17 @@ class SignalLightsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         await self.hass.services.async_call(
                             "light",
                             "turn_on",
-                            {
-                                "entity_id": light.entity_id,
-                                "rgb_color": list(cycle_signal.color),
-                                "brightness": light.brightness,
-                            },
+                            self._turn_on_data(
+                                light.entity_id,
+                                cycle_signal.color,
+                                cycle_active.effective_brightness(light.brightness),
+                                cycle_active.effective_effect(),
+                            ),
                             blocking=False,
                         )
                     else:
                         # Light not in this signal's filter — use normal evaluation
-                        winner = self.engine.get_winning_signal_for_light(light.entity_id)
+                        winner = self.engine.get_winning_active_for_light(light.entity_id)
                         if winner is None:
                             await self.hass.services.async_call(
                                 "light", "turn_off",
@@ -269,11 +293,12 @@ class SignalLightsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         else:
                             await self.hass.services.async_call(
                                 "light", "turn_on",
-                                {
-                                    "entity_id": light.entity_id,
-                                    "rgb_color": list(winner.color),
-                                    "brightness": light.brightness,
-                                },
+                                self._turn_on_data(
+                                    light.entity_id,
+                                    winner.signal.color,
+                                    winner.effective_brightness(light.brightness),
+                                    winner.effective_effect(),
+                                ),
                                 blocking=False,
                             )
                 except Exception:  # noqa: BLE001
@@ -298,11 +323,12 @@ class SignalLightsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         await self.hass.services.async_call(
                             "light",
                             "turn_on",
-                            {
-                                "entity_id": entity_id,
-                                "rgb_color": list(state["rgb_color"]),
-                                "brightness": state["brightness"],
-                            },
+                            self._turn_on_data(
+                                entity_id,
+                                state["rgb_color"],
+                                state["brightness"],
+                                state["effect"],
+                            ),
                             blocking=False,
                         )
                 except Exception:  # noqa: BLE001
@@ -440,6 +466,8 @@ class SignalLightsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "template": s.template,
                 "duration": s.duration,
                 "light_filter": s.light_filter,
+                "effect": s.effect,
+                "brightness": s.brightness,
             }
             for s in self.engine.signals
         ]
@@ -485,9 +513,18 @@ class SignalLightsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._setup_template_listeners()
         await self._flush()
 
-    async def async_trigger_signal(self, name: str) -> bool:
-        """Manually trigger an event signal."""
-        result = self.engine.activate_signal(name)
+    async def async_trigger_signal(
+        self,
+        name: str,
+        effect: str | None = None,
+        brightness: int | None = None,
+    ) -> bool:
+        """Manually trigger an event signal.
+
+        effect and brightness override the signal's own values for this
+        activation only.
+        """
+        result = self.engine.activate_signal(name, effect=effect, brightness=brightness)
         if result:
             await self._flush()
         return result
